@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="description" content="Cyber Chess - Clean, mobile-friendly 2-player chess game with local keyboard & touch controls, AI opponent, digital clocks, and tactical move history.">
-  <meta name="theme-color" content="#0f172a">
-  <title>Cyber Chess - 2-Player & Mobile Friendly</title>
+  <meta name="description" content="Cyber Chess - Robust, mobile-friendly 2-player chess game with WebRTC peer-to-peer online rooms, local keyboard & touch controls, AI Sentinel, and digital clocks.">
+  <meta name="theme-color" content="#0b0f19">
+  <title>Cyber Chess - 2-Player Online & Local</title>
 
   <!-- Google Fonts: Outfit & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,222 +16,321 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- Ambient Background Canvas -->
+  <!-- Ambient Animated Background Canvas -->
   <canvas id="bg-canvas"></canvas>
 
-  <div class="app-container">
+  <div class="app-viewport">
     
-    <!-- Top Responsive Header -->
-    <header class="app-header" role="banner">
-      <div class="brand-wrapper">
-        <div class="brand-icon" aria-hidden="true">♟</div>
-        <div>
-          <h1 class="brand-name">CYBER CHESS</h1>
-          <div class="brand-tag">2-PLAYER &bull; MOBILE &bull; WEB</div>
+    <!-- Minimalist Floating Top Bar -->
+    <header class="minimal-top-bar" role="banner">
+      <div class="brand-badge">
+        <span class="brand-icon" aria-hidden="true">♟</span>
+        <span>CYBER CHESS</span>
+        <div class="online-status-indicator" id="online-status-badge">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="online-status-label">Local 2P</span>
         </div>
       </div>
 
-      <nav class="header-actions" aria-label="Game Configuration">
-        <!-- Mode Dropdown -->
-        <select id="select-game-mode" class="mode-dropdown" aria-label="Game Mode">
-          <option value="pvp_local" selected>👥 2P Local (Single Screen)</option>
-          <option value="pve_ai">🤖 1P vs AI Sentinel</option>
-        </select>
-
-        <!-- AI Difficulty (Shows when AI mode selected) -->
-        <select id="select-ai-difficulty" class="mode-dropdown" style="display: none;" aria-label="AI Difficulty">
-          <option value="easy">Level 1 (Easy)</option>
-          <option value="medium" selected>Level 2 (Medium)</option>
-          <option value="hard">Level 3 (Hard)</option>
-        </select>
-
-        <!-- Time Control -->
-        <select id="select-time-control" class="mode-dropdown" aria-label="Timer">
-          <option value="60">⏱ 1 Min (Bullet)</option>
-          <option value="180">⏱ 3 Min (Blitz)</option>
-          <option value="300" selected>⏱ 5 Min (Rapid)</option>
-          <option value="600">⏱ 10 Min (Rapid)</option>
-          <option value="0">⏱ Unlimited</option>
-        </select>
-
-        <!-- Theme Selector -->
-        <select id="select-theme" class="theme-dropdown" aria-label="Visual Theme">
-          <option value="emerald" selected>🎨 Emerald Green</option>
-          <option value="slate">🎨 Midnight Slate</option>
-          <option value="wood">🎨 Classic Wood</option>
-          <option value="cyber">🎨 Neon Cyber</option>
-        </select>
-
-        <!-- Sound Button -->
-        <button id="btn-toggle-sound" class="btn-pill" aria-label="Toggle Sound" title="Sound Effects">
-          <span class="icon">🔊</span>
+      <div class="top-bar-controls">
+        <button id="btn-open-webrtc" class="icon-btn" title="Play Online Room via WebRTC" aria-label="Online Match">
+          🌐
         </button>
-
-        <!-- Quick New Match -->
-        <button id="btn-new-game" class="btn-pill btn-primary" aria-label="New Match">
-          ⚡ New Game
+        <button id="btn-flip" class="icon-btn" title="Flip Board Perspective" aria-label="Flip Board">
+          🔄
         </button>
-      </nav>
+        <button id="btn-toggle-sound" class="icon-btn" title="Toggle Sound" aria-label="Toggle Sound">
+          🔊
+        </button>
+        <button id="btn-open-drawer" class="icon-btn" title="Game Settings & Move History" aria-label="Settings">
+          ⚙️
+        </button>
+      </div>
     </header>
 
-    <!-- Turn Status Banner -->
-    <div id="status-banner" class="status-pill-banner" aria-live="polite">
-      White's Turn &bull; Move piece to start
-    </div>
+    <!-- Centered Stage (The Board is Front & Center) -->
+    <main class="main-chess-stage" aria-label="Game Arena">
 
-    <!-- Main Game Layout Grid -->
-    <main class="game-layout-grid">
-
-      <!-- Board Arena with Top & Bottom Player Bars -->
-      <section class="board-section-wrapper" aria-label="Chessboard Arena">
-
-        <!-- Top Player Bar (Black / Player 2) -->
-        <div class="player-bar player-bar-black" id="player-bar-b">
-          <div class="player-profile">
-            <div class="player-avatar-circle">♚</div>
-            <div class="player-text-details">
-              <span class="player-title" id="player-title-b">Black (Player 2)</span>
-              <div class="player-captured-tray" id="p2-captured">
-                <!-- Captured white pieces -->
-              </div>
-            </div>
-            <span class="score-diff" id="p2-advantage"></span>
-          </div>
-
-          <div class="clock-widget" id="p2-timer" aria-label="Black Clock">05:00</div>
-        </div>
-
-        <!-- Centered Chessboard -->
-        <div class="board-container-outer" id="board-container-outer">
-          <div id="chess-board" class="chess-board" role="grid" aria-label="Interactive Chessboard">
-            <!-- 64 Squares generated by app.js -->
-          </div>
-        </div>
-
-        <!-- Bottom Player Bar (White / Player 1) -->
-        <div class="player-bar player-bar-white active-turn" id="player-bar-w">
-          <div class="player-profile">
-            <div class="player-avatar-circle">♔</div>
-            <div class="player-text-details">
-              <span class="player-title" id="player-title-w">White (Player 1)</span>
-              <div class="player-captured-tray" id="p1-captured">
-                <!-- Captured black pieces -->
-              </div>
-            </div>
-            <span class="score-diff" id="p1-advantage"></span>
-          </div>
-
-          <div class="clock-widget" id="p1-timer" aria-label="White Clock">05:00</div>
-        </div>
-
-        <!-- Mobile Quick Action Toolbar -->
-        <div class="quick-action-toolbar" role="toolbar" aria-label="Quick Actions">
-          <button id="btn-flip" class="toolbar-btn" title="Flip Board Perspective">
-            <span class="icon">🔄</span>
-            <span>Flip</span>
-          </button>
-          <button id="btn-draw" class="toolbar-btn" title="Offer Draw">
-            <span class="icon">🤝</span>
-            <span>Draw</span>
-          </button>
-          <button id="btn-resign" class="toolbar-btn btn-danger" title="Resign Match">
-            <span class="icon">🏳</span>
-            <span>Resign</span>
-          </button>
-          <button id="btn-copy-pgn" class="toolbar-btn" title="Copy Match PGN">
-            <span class="icon">📋</span>
-            <span>PGN</span>
-          </button>
-        </div>
-
-      </section>
-
-      <!-- Tactical Console (Side on Desktop, Bottom on Mobile) -->
-      <aside class="tactical-console" aria-label="Tactical Console">
-        
-        <!-- Tab Navigation -->
-        <div class="tab-nav-bar" role="tablist">
-          <button class="tab-btn tab-active" id="tab-btn-moves" role="tab" aria-selected="true" aria-controls="pane-moves">
-            Move History
-          </button>
-          <button class="tab-btn" id="tab-btn-settings" role="tab" aria-selected="false" aria-controls="pane-settings">
-            Controls & Settings
-          </button>
-        </div>
-
-        <!-- Tab 1: Move History -->
-        <div class="tab-pane pane-active" id="pane-moves" role="tabpanel">
-          <div id="move-list" class="move-list-container" role="log" aria-label="Moves Record">
-            <!-- Dynamically populated move rows -->
-          </div>
-
-          <!-- History Review Navigation -->
-          <div class="history-nav-controls">
-            <button id="btn-history-start" class="btn-pill nav-btn" title="First Move">|◀</button>
-            <button id="btn-history-prev" class="btn-pill nav-btn" title="Previous Move">◀</button>
-            <button id="btn-history-next" class="btn-pill nav-btn" title="Next Move">▶</button>
-            <button id="btn-history-end" class="btn-pill nav-btn" title="Live Board">▶|</button>
-          </div>
-        </div>
-
-        <!-- Tab 2: Settings & Keyboard Guide -->
-        <div class="tab-pane" id="pane-settings" role="tabpanel">
-          <div class="settings-group">
-            <label class="settings-row">
-              <span>Auto-flip on each turn:</span>
-              <input type="checkbox" id="check-auto-flip" style="accent-color: var(--accent-primary); width: 18px; height: 18px; cursor: pointer;">
-            </label>
-
-            <label class="settings-row">
-              <span>Piece Artwork:</span>
-              <select id="select-piece-style" class="mode-dropdown" style="padding: 3px 8px; font-size: 0.8rem;">
-                <option value="classic" selected>Modern Staunton (Clean)</option>
-                <option value="cyber">Cyber Neon (Sci-Fi)</option>
-              </select>
-            </label>
-
-            <div class="settings-row" style="margin-top: 6px;">
-              <span>Board Position:</span>
-              <button id="btn-copy-fen" class="btn-pill" style="padding: 3px 8px; font-size: 0.75rem;">
-                Copy FEN
-              </button>
-            </div>
-
-            <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 6px 0;">
-
-            <div style="font-weight: 600; font-size: 0.8rem; color: #fff; margin-bottom: 4px;">
-              ⌨ Keyboard Shortcuts:
-            </div>
-            <div class="settings-row">
-              <span>Player 1 (White):</span>
-              <span><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span> + <span class="keycap">Space</span></span>
-            </div>
-            <div class="settings-row">
-              <span>Player 2 (Black):</span>
-              <span><span class="keycap">▲</span><span class="keycap">◄</span><span class="keycap">▼</span><span class="keycap">►</span> + <span class="keycap">Enter</span></span>
-            </div>
-            <div class="settings-row">
-              <span>Touch / Mouse:</span>
-              <span style="color: var(--accent-primary);">Tap or Drag & Drop</span>
+      <!-- Top Player Bar (Black / Player 2) -->
+      <div class="player-bar player-bar-black" id="player-bar-b">
+        <div class="player-profile">
+          <div class="player-avatar-circle">♚</div>
+          <div class="player-text-details">
+            <span class="player-title" id="player-title-b">Black (Player 2)</span>
+            <div class="player-captured-tray" id="p2-captured">
+              <!-- Captured pieces -->
             </div>
           </div>
+          <span class="score-diff" id="p2-advantage"></span>
         </div>
 
-      </aside>
+        <div class="clock-widget" id="p2-timer" aria-label="Black Timer">05:00</div>
+      </div>
+
+      <!-- Chessboard Container -->
+      <div class="board-container-outer" id="board-container-outer">
+        <div id="chess-board" class="chess-board" role="grid" aria-label="Chessboard">
+          <!-- 64 Squares generated dynamically -->
+        </div>
+      </div>
+
+      <!-- Bottom Player Bar (White / Player 1) -->
+      <div class="player-bar player-bar-white active-turn" id="player-bar-w">
+        <div class="player-profile">
+          <div class="player-avatar-circle">♔</div>
+          <div class="player-text-details">
+            <span class="player-title" id="player-title-w">White (Player 1)</span>
+            <div class="player-captured-tray" id="p1-captured">
+              <!-- Captured pieces -->
+            </div>
+          </div>
+          <span class="score-diff" id="p1-advantage"></span>
+        </div>
+
+        <div class="clock-widget" id="p1-timer" aria-label="White Timer">05:00</div>
+      </div>
+
+      <!-- Compact Under-Board Action Bar -->
+      <nav class="minimal-action-bar" aria-label="Game Quick Actions">
+        <button id="btn-new-game" class="action-pill-btn" title="New Game">
+          <span>⚡</span>
+          <span>New Game</span>
+        </button>
+        <button id="btn-draw" class="action-pill-btn" title="Offer Draw">
+          <span>🤝</span>
+          <span>Draw</span>
+        </button>
+        <button id="btn-resign" class="action-pill-btn btn-danger" title="Resign Match">
+          <span>🏳</span>
+          <span>Resign</span>
+        </button>
+        <button id="btn-open-moves" class="action-pill-btn" title="Open Move History">
+          <span>📜</span>
+          <span>Moves</span>
+        </button>
+      </nav>
 
     </main>
 
   </div>
 
+  <!-- Settings & Moves Slide-Over Drawer (Appears only on user demand) -->
+  <div class="drawer-backdrop" id="settings-drawer-backdrop">
+    <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer-header">
+        <h2 id="drawer-title" class="drawer-title">Tactical Console</h2>
+        <button class="drawer-close-btn" id="btn-close-drawer" aria-label="Close Settings">✕</button>
+      </div>
+
+      <!-- Drawer Tabs -->
+      <div class="tab-nav-bar" role="tablist">
+        <button class="tab-btn tab-active" id="drawer-tab-moves" role="tab" aria-selected="true">
+          Moves
+        </button>
+        <button class="tab-btn" id="drawer-tab-game" role="tab" aria-selected="false">
+          Match
+        </button>
+        <button class="tab-btn" id="drawer-tab-style" role="tab" aria-selected="false">
+          Theme
+        </button>
+        <button class="tab-btn" id="drawer-tab-keys" role="tab" aria-selected="false">
+          Keys
+        </button>
+      </div>
+
+      <!-- Tab 1: Move History -->
+      <div class="tab-pane pane-active" id="pane-moves" role="tabpanel">
+        <div id="move-list" class="move-list-container" role="log" aria-label="Move History Log">
+          <!-- Moves populated dynamically -->
+        </div>
+
+        <div class="history-nav-controls">
+          <button id="btn-history-start" class="btn-pill" title="First Move">|◀</button>
+          <button id="btn-history-prev" class="btn-pill" title="Previous Move">◀</button>
+          <button id="btn-history-next" class="btn-pill" title="Next Move">▶</button>
+          <button id="btn-history-end" class="btn-pill" title="Live Board">▶|</button>
+        </div>
+
+        <div style="margin-top: 14px; display: flex; gap: 8px;">
+          <button id="btn-copy-pgn" class="btn-pill" style="flex: 1; justify-content: center;">
+            📋 Copy PGN
+          </button>
+          <button id="btn-copy-fen" class="btn-pill" style="flex: 1; justify-content: center;">
+            Copy FEN
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 2: Match & Mode Config -->
+      <div class="tab-pane" id="pane-game" role="tabpanel">
+        <div class="settings-group">
+          <div class="settings-row">
+            <label for="select-game-mode">Mode:</label>
+            <select id="select-game-mode" class="mode-dropdown">
+              <option value="pvp_local" selected>👥 2P Local (Single Screen)</option>
+              <option value="webrtc">🌐 WebRTC Online Room</option>
+              <option value="pve_ai">🤖 1P vs AI Sentinel</option>
+            </select>
+          </div>
+
+          <div class="settings-row" id="ai-diff-row" style="display: none;">
+            <label for="select-ai-difficulty">AI Difficulty:</label>
+            <select id="select-ai-difficulty" class="mode-dropdown">
+              <option value="easy">Drone (Easy)</option>
+              <option value="medium" selected>Operative (Medium)</option>
+              <option value="hard">Grandmaster (Hard)</option>
+            </select>
+          </div>
+
+          <div class="settings-row">
+            <label for="select-time-control">Timer:</label>
+            <select id="select-time-control" class="mode-dropdown">
+              <option value="60">⏱ 1 Min (Bullet)</option>
+              <option value="180">⏱ 3 Min (Blitz)</option>
+              <option value="300" selected>⏱ 5 Min (Rapid)</option>
+              <option value="600">⏱ 10 Min (Rapid)</option>
+              <option value="0">⏱ Unlimited (No Clock)</option>
+            </select>
+          </div>
+
+          <div class="settings-row-inline" style="margin-top: 6px;">
+            <span>Auto-flip on each turn:</span>
+            <input type="checkbox" id="check-auto-flip" style="accent-color: var(--accent-primary); width: 18px; height: 18px; cursor: pointer;">
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Themes & Piece Styles -->
+      <div class="tab-pane" id="pane-style" role="tabpanel">
+        <div class="settings-group">
+          <div class="settings-row">
+            <label for="select-theme">Board Theme:</label>
+            <select id="select-theme" class="theme-dropdown">
+              <option value="emerald" selected>🟢 Emerald Green (Tournament)</option>
+              <option value="slate">🌑 Midnight Slate (Cool Graphite)</option>
+              <option value="wood">🪵 Classic Wood (Mahogany)</option>
+              <option value="cyber">⚡ Neon Cyber (Sci-Fi Glow)</option>
+            </select>
+          </div>
+
+          <div class="settings-row">
+            <label for="select-piece-style">Piece Artwork:</label>
+            <select id="select-piece-style" class="mode-dropdown">
+              <option value="classic" selected>Modern Staunton (Clean & High Contrast)</option>
+              <option value="cyber">Cyber Neon (Holographic Sci-Fi)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Keyboard Shortcuts -->
+      <div class="tab-pane" id="pane-keys" role="tabpanel">
+        <div class="settings-group">
+          <div class="settings-row">
+            <span style="font-weight: 600; color: #fff;">Player 1 (White):</span>
+            <div style="margin-top: 4px;">
+              <span class="keycap">W</span> <span class="keycap">A</span> <span class="keycap">S</span> <span class="keycap">D</span> to move cursor
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="keycap">SPACE</span> or <span class="keycap">F</span> to select / place
+            </div>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 6px 0;">
+
+          <div class="settings-row">
+            <span style="font-weight: 600; color: #fff;">Player 2 (Black):</span>
+            <div style="margin-top: 4px;">
+              <span class="keycap">▲</span> <span class="keycap">◄</span> <span class="keycap">▼</span> <span class="keycap">►</span> to move cursor
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="keycap">ENTER</span> to select / place
+            </div>
+          </div>
+
+          <div class="settings-row" style="margin-top: 6px;">
+            <span>Touch & Mouse: Tap piece or drag & drop.</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- WebRTC Online Room Modal Dialog -->
+  <dialog id="webrtc-dialog" aria-modal="true" aria-labelledby="webrtc-title">
+    <div class="webrtc-modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 id="webrtc-title" style="font-size: 1.25rem; font-weight: 700;">🌐 Online WebRTC Match</h2>
+        <button id="btn-close-webrtc" class="drawer-close-btn" aria-label="Close">✕</button>
+      </div>
+      <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">
+        Direct peer-to-peer connection for 2 players across any location.
+      </p>
+
+      <!-- WebRTC Tabs -->
+      <div class="webrtc-tabs">
+        <button class="webrtc-tab-btn active-tab" id="btn-webrtc-tab-create">
+          Create Room
+        </button>
+        <button class="webrtc-tab-btn" id="btn-webrtc-tab-join">
+          Join Room
+        </button>
+      </div>
+
+      <!-- Create Room Section -->
+      <div id="webrtc-create-section">
+        <p style="font-size: 0.85rem; color: var(--text-secondary);">
+          Your room code for your opponent to join:
+        </p>
+
+        <div class="room-code-display">
+          <div class="room-code-text" id="display-room-code">GENERATING...</div>
+        </div>
+
+        <div class="radar-spinner" id="create-radar"></div>
+        <p id="create-status-text" style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent-warning); margin-bottom: 14px;">
+          Waiting for opponent to connect...
+        </p>
+
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-copy-room-code" class="btn-pill btn-primary" style="flex: 1; justify-content: center;">
+            📋 Copy Code
+          </button>
+          <button id="btn-copy-room-link" class="btn-pill" style="flex: 1; justify-content: center;">
+            🔗 Copy Link
+          </button>
+        </div>
+      </div>
+
+      <!-- Join Room Section -->
+      <div id="webrtc-join-section" style="display: none;">
+        <p style="font-size: 0.85rem; color: var(--text-secondary);">
+          Enter the Room Code shared by your opponent:
+        </p>
+
+        <input type="text" id="input-room-code" class="webrtc-input" placeholder="e.g. CHESS-A1B2" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="characters">
+
+        <button id="btn-join-room-action" class="btn-pill btn-primary" style="width: 100%; justify-content: center; padding: 10px; font-size: 0.95rem;">
+          🚀 Connect & Play
+        </button>
+
+        <p id="join-status-text" style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted); margin-top: 10px; min-height: 18px;">
+        </p>
+      </div>
+
+    </div>
+  </dialog>
+
   <!-- Pawn Promotion Modal -->
   <dialog id="promotion-dialog" aria-modal="true" aria-labelledby="promo-title">
     <div class="modal-content-card">
       <h2 id="promo-title" class="modal-title">Promote Pawn</h2>
-      <p class="modal-subtitle">Select a piece for elevation (or press 1-4):</p>
+      <p class="modal-subtitle">Select a piece (or press keys 1-4):</p>
       
       <div class="promo-grid">
         <button class="promo-btn" data-piece="q" title="Queen (1)">
-          <div class="promo-piece-box" id="promo-box-q">
+          <div class="promo-piece-box">
             <svg viewBox="0 0 100 100" class="chess-piece-svg">
               <path d="M 30 43 L 20 25 L 34 32 L 50 18 L 66 32 L 80 25 L 70 43 Z" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
             </svg>
@@ -240,7 +339,7 @@
         </button>
 
         <button class="promo-btn" data-piece="r" title="Rook (2)">
-          <div class="promo-piece-box" id="promo-box-r">
+          <div class="promo-piece-box">
             <svg viewBox="0 0 100 100" class="chess-piece-svg">
               <path d="M 24 38 L 24 22 L 35 22 L 35 29 L 45 29 L 45 22 L 55 22 L 55 29 L 65 29 L 65 22 L 76 22 L 76 38 Z" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
             </svg>
@@ -249,7 +348,7 @@
         </button>
 
         <button class="promo-btn" data-piece="b" title="Bishop (3)">
-          <div class="promo-piece-box" id="promo-box-b">
+          <div class="promo-piece-box">
             <svg viewBox="0 0 100 100" class="chess-piece-svg">
               <path d="M 33 48 C 29 34, 38 20, 50 14 C 62 20, 71 34, 67 48 Z" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
             </svg>
@@ -258,7 +357,7 @@
         </button>
 
         <button class="promo-btn" data-piece="n" title="Knight (4)">
-          <div class="promo-piece-box" id="promo-box-n">
+          <div class="promo-piece-box">
             <svg viewBox="0 0 100 100" class="chess-piece-svg">
               <path d="M 28 74 C 28 62, 33 52, 26 44 C 21 37, 23 31, 30 30 C 34 30, 38 34, 42 32 C 40 25, 43 18, 50 16 C 54 15, 57 20, 60 21 C 65 18, 70 20, 73 25 C 77 34, 75 46, 74 54 Z" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
             </svg>
@@ -284,12 +383,14 @@
   <!-- Toast Element -->
   <div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
 
-  <!-- Scripts -->
+  <!-- Scripts in dependency order -->
+  <script src="js/peerjs.min.js"></script>
   <script src="js/chess-engine.js"></script>
   <script src="js/pieces-svg.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/particles.js"></script>
   <script src="js/chess-ai.js"></script>
+  <script src="js/webrtc-manager.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

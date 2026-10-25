@@ -1,7 +1,11 @@
 /**
- * CYBER CHESS - User-Friendly & Mobile-First Main Application Controller
- * High-performance mobile touch events, drag & drop, dual keyboard navigation,
- * real-time chess clocks, themes, and audio synthesizer integration.
+ * CYBER CHESS - Main Application Controller
+ * Features:
+ * - Minimalist focus layout (board centered, settings in slide-over drawer)
+ * - WebRTC Peer-to-Peer online multiplayer with room code & link sharing
+ * - Mobile touch drag & tap controls
+ * - Dual keyboard navigation
+ * - Chess clocks & sounds
  */
 
 class ChessApp {
@@ -9,9 +13,10 @@ class ChessApp {
     this.engine = new ChessEngine();
     this.ai = new ChessAI(this.engine);
     this.sound = window.soundSynth;
+    this.webrtc = new WebRTCManager(this);
 
     // Config
-    this.gameMode = 'pvp_local'; // 'pvp_local' or 'pve_ai'
+    this.gameMode = 'pvp_local'; // 'pvp_local', 'webrtc', 'pve_ai'
     this.aiDifficulty = 'medium';
     this.aiColor = 'b';
     this.flipped = false;
@@ -21,13 +26,17 @@ class ChessApp {
     this.clockRunning = false;
     this.timerInterval = null;
 
+    // WebRTC online states
+    this.myOnlineColor = null; // 'w' or 'b'
+    this.onlineRoomId = null;
+
     // Interaction states
     this.selectedSquare = null;
     this.legalMovesForSelected = [];
     this.pendingPromotion = null;
     this.reviewIndex = -1;
 
-    // Keyboard cursors for P1 (WASD) and P2 (Arrows)
+    // Keyboard cursors
     this.cursor = {
       w: { row: 6, col: 4 },
       b: { row: 1, col: 4 }
@@ -41,17 +50,21 @@ class ChessApp {
     this.initDOM();
     this.bindEvents();
     this.bindTouchEvents();
+    this.bindDrawerEvents();
+    this.bindWebRTCEvents();
     this.setupNewGame();
+    this.checkUrlForRoomInvite();
   }
 
   initDOM() {
     this.boardEl = document.getElementById('chess-board');
     this.boardContainer = document.getElementById('board-container-outer');
-    this.statusBannerEl = document.getElementById('status-banner');
     this.p1TimerEl = document.getElementById('p1-timer');
     this.p2TimerEl = document.getElementById('p2-timer');
     this.p1BarEl = document.getElementById('player-bar-w');
     this.p2BarEl = document.getElementById('player-bar-b');
+    this.p1TitleEl = document.getElementById('player-title-w');
+    this.p2TitleEl = document.getElementById('player-title-b');
     this.p1CapturedEl = document.getElementById('p1-captured');
     this.p2CapturedEl = document.getElementById('p2-captured');
     this.p1AdvantageEl = document.getElementById('p1-advantage');
@@ -63,6 +76,20 @@ class ChessApp {
     this.gameoverReasonEl = document.getElementById('gameover-reason');
     this.gameoverStatsEl = document.getElementById('gameover-stats');
     this.toastEl = document.getElementById('app-toast');
+
+    // Drawer elements
+    this.drawerBackdrop = document.getElementById('settings-drawer-backdrop');
+    this.onlineBadge = document.getElementById('online-status-badge');
+    this.onlineStatusDot = document.getElementById('status-dot');
+    this.onlineStatusLabel = document.getElementById('online-status-label');
+
+    // WebRTC Modal elements
+    this.webrtcDialog = document.getElementById('webrtc-dialog');
+    this.displayRoomCode = document.getElementById('display-room-code');
+    this.createRadar = document.getElementById('create-radar');
+    this.createStatusText = document.getElementById('create-status-text');
+    this.inputRoomCode = document.getElementById('input-room-code');
+    this.joinStatusText = document.getElementById('join-status-text');
   }
 
   setupNewGame() {
@@ -149,6 +176,13 @@ class ChessApp {
     this.p2TimerEl.classList.toggle('time-danger', this.timers.b <= 20);
   }
 
+  syncTimers(timers) {
+    if (timers) {
+      this.timers = { ...timers };
+      this.updateClockDisplays();
+    }
+  }
+
   // --- Board & UI Rendering ---
   renderBoard() {
     this.boardEl.innerHTML = '';
@@ -156,7 +190,6 @@ class ChessApp {
     const isLive = this.reviewIndex === -1;
     const currentBoard = isLive ? this.engine.board : this.getBoardAtReview(this.reviewIndex);
 
-    // Check King square
     let checkKingSquare = null;
     if (isLive && this.engine.isCheck) {
       const kingPos = this.engine.findKing(turn);
@@ -200,7 +233,7 @@ class ChessApp {
           }
         }
 
-        // Highlight selected square
+        // Selected square
         if (this.selectedSquare && this.selectedSquare.row === r && this.selectedSquare.col === c) {
           squareEl.classList.add('selected-highlight');
         }
@@ -220,7 +253,7 @@ class ChessApp {
           }
         }
 
-        // King check danger
+        // Check danger pulse
         if (checkKingSquare && checkKingSquare.row === r && checkKingSquare.col === c) {
           squareEl.classList.add('check-danger-pulse');
         }
@@ -250,7 +283,13 @@ class ChessApp {
           pieceContainer.dataset.col = c;
           pieceContainer.innerHTML = ChessPiecesSVG.getPieceSVG(piece.type, piece.color);
 
-          if (isLive && piece.color === turn) {
+          // Allow dragging only when it's your turn and your piece
+          let canDrag = isLive && piece.color === turn;
+          if (this.gameMode === 'webrtc') {
+            canDrag = canDrag && piece.color === this.myOnlineColor;
+          }
+
+          if (canDrag) {
             pieceContainer.draggable = true;
           }
 
@@ -276,21 +315,6 @@ class ChessApp {
 
     this.p1BarEl.classList.toggle('active-turn', isWhite);
     this.p2BarEl.classList.toggle('active-turn', !isWhite);
-
-    if (this.engine.isCheckmate) {
-      const winner = isWhite ? 'Black' : 'White';
-      this.statusBannerEl.textContent = `Checkmate! ${winner} is victorious! 🏆`;
-      this.statusBannerEl.className = 'status-pill-banner is-victory';
-    } else if (this.engine.isDraw) {
-      this.statusBannerEl.textContent = `Draw by ${this.engine.drawReason}`;
-      this.statusBannerEl.className = 'status-pill-banner';
-    } else if (this.engine.isCheck) {
-      this.statusBannerEl.textContent = `⚠️ Check! ${isWhite ? 'White' : 'Black'} King is in danger!`;
-      this.statusBannerEl.className = 'status-pill-banner is-check';
-    } else {
-      this.statusBannerEl.textContent = isWhite ? "White's Turn" : "Black's Turn";
-      this.statusBannerEl.className = 'status-pill-banner';
-    }
 
     this.updateCapturedPieces();
   }
@@ -380,18 +404,32 @@ class ChessApp {
     this.updateMoveList();
   }
 
-  // --- Core Move Handler ---
+  // --- Move Handling & Permissions ---
+  canInteractWithSquare(row, col) {
+    if (this.engine.isCheckmate || this.engine.isDraw) return false;
+
+    // AI Mode: Cannot move on AI's turn
+    if (this.gameMode === 'pve_ai' && this.engine.turn === this.aiColor) return false;
+
+    // WebRTC Online Mode: Only move on your turn with your color!
+    if (this.gameMode === 'webrtc') {
+      if (!this.webrtc.isConnected) return false;
+      if (this.engine.turn !== this.myOnlineColor) return false;
+    }
+
+    return true;
+  }
+
   handleSquareSelect(row, col) {
     if (this.reviewIndex !== -1) {
       this.returnToLive();
     }
 
-    if (this.engine.isCheckmate || this.engine.isDraw) return;
-    if (this.gameMode === 'pve_ai' && this.engine.turn === this.aiColor) return;
+    if (!this.canInteractWithSquare(row, col)) return;
 
     const clickedPiece = this.engine.getPiece(row, col);
 
-    // 1. Move to clicked valid destination square
+    // 1. Move to clicked valid target square
     if (this.selectedSquare) {
       const matchedMove = this.legalMovesForSelected.find(m => m.to.row === row && m.to.col === col);
       if (matchedMove) {
@@ -410,8 +448,12 @@ class ChessApp {
       }
     }
 
-    // 2. Select piece of current player's turn
+    // 2. Select piece of current player
     if (clickedPiece && clickedPiece.color === this.engine.turn) {
+      if (this.gameMode === 'webrtc' && clickedPiece.color !== this.myOnlineColor) {
+        return;
+      }
+
       this.selectedSquare = { row, col };
       this.legalMovesForSelected = this.engine.getMovesForSquare(row, col);
       this.sound.playSelect();
@@ -423,8 +465,7 @@ class ChessApp {
     }
   }
 
-  executeMove(moveInput) {
-    const fromPiece = this.engine.getPiece(moveInput.from.row, moveInput.from.col);
+  executeMove(moveInput, isRemote = false) {
     const result = this.engine.makeMove(moveInput);
     if (!result.success) {
       this.sound.playIllegal();
@@ -433,6 +474,11 @@ class ChessApp {
 
     if (!this.clockRunning && this.timeControl > 0) {
       this.startClock();
+    }
+
+    // If local player in WebRTC mode, send move to remote peer
+    if (this.gameMode === 'webrtc' && !isRemote) {
+      this.webrtc.sendMove(moveInput, this.timers);
     }
 
     // Sounds
@@ -448,7 +494,7 @@ class ChessApp {
       this.sound.playMove();
     }
 
-    // Auto-flip for local 2-player pass & play if enabled
+    // Auto-flip in local 2P mode
     if (this.autoFlip && this.gameMode === 'pvp_local') {
       this.flipped = this.engine.turn === 'b';
     }
@@ -471,6 +517,14 @@ class ChessApp {
     if (this.gameMode === 'pve_ai' && this.engine.turn === this.aiColor) {
       setTimeout(() => this.makeAIMove(), 320);
     }
+  }
+
+  // Handle incoming remote move via WebRTC
+  receiveRemoteMove(moveInput, remoteTimers) {
+    if (remoteTimers) {
+      this.syncTimers(remoteTimers);
+    }
+    this.executeMove(moveInput, true);
   }
 
   makeAIMove() {
@@ -507,7 +561,7 @@ class ChessApp {
     this.gameoverDialog.showModal();
   }
 
-  // --- Mobile Touch Drag & Tap Integration ---
+  // --- Mobile Touch Gestures ---
   bindTouchEvents() {
     let touchStartX = 0;
     let touchStartY = 0;
@@ -523,10 +577,12 @@ class ChessApp {
       touchStartX = touch.clientX;
       touchStartY = touch.clientY;
 
-      const piece = this.engine.getPiece(row, col);
-      if (piece && piece.color === this.engine.turn) {
-        this.touchStartSquare = { row, col };
-        this.isDraggingTouch = false;
+      if (this.canInteractWithSquare(row, col)) {
+        const piece = this.engine.getPiece(row, col);
+        if (piece && piece.color === this.engine.turn) {
+          this.touchStartSquare = { row, col };
+          this.isDraggingTouch = false;
+        }
       }
     }, { passive: false });
 
@@ -535,7 +591,7 @@ class ChessApp {
       const dist = Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY);
       if (dist > 10 && this.touchStartSquare) {
         this.isDraggingTouch = true;
-        e.preventDefault(); // Prevent accidental scroll when dragging piece
+        e.preventDefault();
       }
     }, { passive: false });
 
@@ -545,7 +601,6 @@ class ChessApp {
       const square = targetEl?.closest('.chess-square');
 
       if (this.isDraggingTouch && this.touchStartSquare && square) {
-        // Drag drop end
         const targetRow = parseInt(square.dataset.row, 10);
         const targetCol = parseInt(square.dataset.col, 10);
 
@@ -563,7 +618,6 @@ class ChessApp {
           }
         }
       } else if (square) {
-        // Simple tap to select / tap to move
         const row = parseInt(square.dataset.row, 10);
         const col = parseInt(square.dataset.col, 10);
         this.handleSquareSelect(row, col);
@@ -576,7 +630,7 @@ class ChessApp {
 
   // --- Keyboard & Desktop Events ---
   handleKeyDown(e) {
-    if (this.promoDialog.open || this.gameoverDialog.open) {
+    if (this.promoDialog.open || this.gameoverDialog.open || this.webrtcDialog.open) {
       if (this.promoDialog.open) {
         if (e.key === '1') this.choosePromotion('q');
         if (e.key === '2') this.choosePromotion('r');
@@ -622,11 +676,7 @@ class ChessApp {
       this.cursor.b = { row, col };
 
       if (key === 'enter') {
-        if (!isWhiteTurn || this.gameMode === 'pve_ai') {
-          this.handleSquareSelect(row, col);
-        } else {
-          this.handleSquareSelect(row, col);
-        }
+        this.handleSquareSelect(row, col);
       }
       this.renderBoard();
       e.preventDefault();
@@ -642,69 +692,199 @@ class ChessApp {
     }
   }
 
+  // --- Drawer & Minimal UI Controls ---
+  bindDrawerEvents() {
+    const openDrawer = (defaultTab = 'moves') => {
+      this.drawerBackdrop.classList.add('drawer-open');
+      this.switchDrawerTab(defaultTab);
+    };
+
+    const closeDrawer = () => {
+      this.drawerBackdrop.classList.remove('drawer-open');
+    };
+
+    document.getElementById('btn-open-drawer')?.addEventListener('click', () => openDrawer('game'));
+    document.getElementById('btn-open-moves')?.addEventListener('click', () => openDrawer('moves'));
+    document.getElementById('btn-close-drawer')?.addEventListener('click', closeDrawer);
+    this.drawerBackdrop?.addEventListener('click', (e) => {
+      if (e.target === this.drawerBackdrop) closeDrawer();
+    });
+
+    // Drawer Tabs
+    ['moves', 'game', 'style', 'keys'].forEach(tabName => {
+      document.getElementById(`drawer-tab-${tabName}`)?.addEventListener('click', () => {
+        this.switchDrawerTab(tabName);
+      });
+    });
+  }
+
+  switchDrawerTab(tabName) {
+    ['moves', 'game', 'style', 'keys'].forEach(t => {
+      document.getElementById(`drawer-tab-${t}`)?.classList.toggle('tab-active', t === tabName);
+      document.getElementById(`pane-${t}`)?.classList.toggle('pane-active', t === tabName);
+    });
+  }
+
+  // --- WebRTC Online Integration ---
+  bindWebRTCEvents() {
+    const openWebRTCModal = () => {
+      this.webrtcDialog.showModal();
+      this.switchWebRTCTab('create');
+      // If no room created yet, create one automatically
+      if (!this.onlineRoomId) {
+        this.displayRoomCode.textContent = 'GENERATING...';
+        this.createRadar.style.display = 'block';
+        this.createStatusText.textContent = 'Setting up room on network...';
+
+        this.webrtc.createRoom(null, {
+          onRoomCreated: (code) => {
+            this.onlineRoomId = code;
+            this.displayRoomCode.textContent = code;
+            this.createStatusText.textContent = 'Waiting for opponent to connect...';
+          },
+          onError: (err) => {
+            this.createStatusText.textContent = 'Failed to create room. Retrying...';
+          }
+        });
+      }
+    };
+
+    document.getElementById('btn-open-webrtc')?.addEventListener('click', openWebRTCModal);
+    document.getElementById('btn-close-webrtc')?.addEventListener('click', () => {
+      this.webrtcDialog.close();
+    });
+
+    // WebRTC Tabs (Create vs Join)
+    document.getElementById('btn-webrtc-tab-create')?.addEventListener('click', () => this.switchWebRTCTab('create'));
+    document.getElementById('btn-webrtc-tab-join')?.addEventListener('click', () => this.switchWebRTCTab('join'));
+
+    // Copy Room Code
+    document.getElementById('btn-copy-room-code')?.addEventListener('click', () => {
+      if (this.onlineRoomId) {
+        navigator.clipboard.writeText(this.onlineRoomId).then(() => {
+          this.showToast(`Room code ${this.onlineRoomId} copied!`);
+        });
+      }
+    });
+
+    // Copy Invite Link
+    document.getElementById('btn-copy-room-link')?.addEventListener('click', () => {
+      if (this.onlineRoomId) {
+        const inviteUrl = `${window.location.origin}${window.location.pathname}#room=${this.onlineRoomId}`;
+        navigator.clipboard.writeText(inviteUrl).then(() => {
+          this.showToast('Invite link copied to clipboard!');
+        });
+      }
+    });
+
+    // Join Room Action
+    document.getElementById('btn-join-room-action')?.addEventListener('click', () => {
+      const code = this.inputRoomCode.value.trim().toUpperCase();
+      if (!code) {
+        this.joinStatusText.textContent = 'Please enter a valid room code.';
+        return;
+      }
+
+      this.joinStatusText.textContent = `Connecting to room ${code}...`;
+      this.webrtc.joinRoom(code, {
+        onConnected: () => {
+          this.joinStatusText.textContent = 'Connected! Entering match...';
+        },
+        onError: (err) => {
+          this.joinStatusText.textContent = 'Room connection failed. Check code & retry.';
+        }
+      });
+    });
+  }
+
+  switchWebRTCTab(tab) {
+    const isCreate = tab === 'create';
+    document.getElementById('btn-webrtc-tab-create')?.classList.toggle('active-tab', isCreate);
+    document.getElementById('btn-webrtc-tab-join')?.classList.toggle('active-tab', !isCreate);
+    document.getElementById('webrtc-create-section').style.display = isCreate ? 'block' : 'none';
+    document.getElementById('webrtc-join-section').style.display = !isCreate ? 'block' : 'none';
+  }
+
+  checkUrlForRoomInvite() {
+    if (window.location.hash.includes('room=')) {
+      const match = window.location.hash.match(/room=([A-Za-z0-9-]+)/);
+      if (match && match[1]) {
+        const inviteCode = match[1].toUpperCase();
+        setTimeout(() => {
+          this.webrtcDialog.showModal();
+          this.switchWebRTCTab('join');
+          this.inputRoomCode.value = inviteCode;
+          this.joinStatusText.textContent = `Found invite for Room ${inviteCode}! Click 'Connect & Play'.`;
+        }, 300);
+      }
+    }
+  }
+
+  onWebRTCConnected(color, roomId) {
+    this.gameMode = 'webrtc';
+    this.myOnlineColor = color;
+    this.onlineRoomId = roomId;
+
+    // Orient board naturally: White at bottom for Host, Black at bottom for Guest!
+    this.flipped = (color === 'b');
+
+    // Update Top Bar status indicator
+    this.onlineStatusDot.className = 'status-dot dot-online';
+    this.onlineStatusLabel.textContent = `Online: #${roomId}`;
+    document.getElementById('btn-open-webrtc')?.classList.add('active-online');
+
+    this.webrtcDialog.close();
+    this.setupNewGame();
+    this.showToast(`Connected to Room #${roomId}! Playing as ${color === 'w' ? 'White' : 'Black'}.`);
+  }
+
+  onWebRTCDisconnected() {
+    this.onlineStatusDot.className = 'status-dot';
+    this.onlineStatusLabel.textContent = 'Disconnected';
+    this.showToast('Remote opponent disconnected from match.');
+  }
+
+  updateOpponentDetails(name) {
+    if (this.myOnlineColor === 'w') {
+      this.p2TitleEl.textContent = `${name} (Black)`;
+      this.p1TitleEl.textContent = 'You (White)';
+    } else {
+      this.p1TitleEl.textContent = `${name} (White)`;
+      this.p2TitleEl.textContent = 'You (Black)';
+    }
+  }
+
+  receiveDrawOffer() {
+    if (confirm('Opponent offered a draw. Do you accept?')) {
+      this.webrtc.sendDrawResponse(true);
+      this.handleRemoteDrawAccepted();
+    } else {
+      this.webrtc.sendDrawResponse(false);
+    }
+  }
+
+  handleRemoteDrawAccepted() {
+    this.stopClocks();
+    this.showGameOverModal('Draw Agreed', 'Both players accepted a mutual ceasefire.');
+  }
+
+  handleRemoteResignation() {
+    this.stopClocks();
+    this.sound.playCheckmate();
+    this.showGameOverModal('Victory by Resignation', 'Opponent has conceded the game. Total victory!');
+  }
+
+  // --- General Event Listeners ---
   bindEvents() {
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
 
-    // Mouse clicks
+    // Mouse click
     this.boardEl.addEventListener('click', (e) => {
       const square = e.target.closest('.chess-square');
       if (!square) return;
       const row = parseInt(square.dataset.row, 10);
       const col = parseInt(square.dataset.col, 10);
       this.handleSquareSelect(row, col);
-    });
-
-    // Drag and drop for mouse
-    let dragOrigin = null;
-    this.boardEl.addEventListener('dragstart', (e) => {
-      const piece = e.target.closest('.chess-piece');
-      if (!piece) return;
-      const square = piece.closest('.chess-square');
-      if (!square) return;
-
-      const row = parseInt(square.dataset.row, 10);
-      const col = parseInt(square.dataset.col, 10);
-
-      const pieceData = this.engine.getPiece(row, col);
-      if (!pieceData || pieceData.color !== this.engine.turn) {
-        e.preventDefault();
-        return;
-      }
-
-      dragOrigin = { row, col };
-      this.selectedSquare = { row, col };
-      this.legalMovesForSelected = this.engine.getMovesForSquare(row, col);
-      this.renderBoard();
-
-      e.dataTransfer.setData('text/plain', `${row},${col}`);
-    });
-
-    this.boardEl.addEventListener('dragover', (e) => e.preventDefault());
-
-    this.boardEl.addEventListener('drop', (e) => {
-      e.preventDefault();
-      const square = e.target.closest('.chess-square');
-      if (!square || !dragOrigin) return;
-
-      const targetRow = parseInt(square.dataset.row, 10);
-      const targetCol = parseInt(square.dataset.col, 10);
-
-      const matchedMove = this.legalMovesForSelected.find(m => m.to.row === targetRow && m.to.col === targetCol);
-      if (matchedMove) {
-        if (matchedMove.promotion) {
-          this.promptPromotion(dragOrigin, { row: targetRow, col: targetCol });
-        } else {
-          this.executeMove({
-            from: dragOrigin,
-            to: { row: targetRow, col: targetCol }
-          });
-        }
-      }
-
-      dragOrigin = null;
-      this.selectedSquare = null;
-      this.legalMovesForSelected = [];
-      this.renderBoard();
     });
 
     // Theme selector
@@ -723,27 +903,28 @@ class ChessApp {
       this.renderBoard();
     });
 
-    // Tab buttons in Tactical Console
-    const tabMoves = document.getElementById('tab-btn-moves');
-    const tabSettings = document.getElementById('tab-btn-settings');
-    const paneMoves = document.getElementById('pane-moves');
-    const paneSettings = document.getElementById('pane-settings');
-
-    tabMoves?.addEventListener('click', () => {
-      tabMoves.classList.add('tab-active');
-      tabSettings?.classList.remove('tab-active');
-      paneMoves?.classList.add('pane-active');
-      paneSettings?.classList.remove('pane-active');
+    // Mode Selector inside Drawer
+    document.getElementById('select-game-mode')?.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      if (mode === 'webrtc') {
+        document.getElementById('btn-open-webrtc')?.click();
+      } else {
+        this.gameMode = mode;
+        const aiDiffRow = document.getElementById('ai-diff-row');
+        if (aiDiffRow) {
+          aiDiffRow.style.display = this.gameMode === 'pve_ai' ? 'flex' : 'none';
+        }
+        this.onlineStatusDot.className = 'status-dot';
+        this.onlineStatusLabel.textContent = this.gameMode === 'pve_ai' ? 'Vs AI' : 'Local 2P';
+        this.setupNewGame();
+      }
     });
 
-    tabSettings?.addEventListener('click', () => {
-      tabSettings.classList.add('tab-active');
-      tabMoves?.classList.remove('tab-active');
-      paneSettings?.classList.add('pane-active');
-      paneMoves?.classList.remove('pane-active');
+    document.getElementById('select-ai-difficulty')?.addEventListener('change', (e) => {
+      this.aiDifficulty = e.target.value;
     });
 
-    // Buttons
+    // Action buttons
     document.getElementById('btn-new-game')?.addEventListener('click', () => this.setupNewGame());
     document.getElementById('btn-restart-modal')?.addEventListener('click', () => {
       this.gameoverDialog.close();
@@ -758,36 +939,34 @@ class ChessApp {
 
     document.getElementById('btn-resign')?.addEventListener('click', () => {
       if (this.engine.isCheckmate || this.engine.isDraw) return;
-      const loser = this.engine.turn === 'w' ? 'White' : 'Black';
-      const winner = this.engine.turn === 'w' ? 'Black' : 'White';
-      this.stopClocks();
-      this.sound.playCheckmate();
-      this.showGameOverModal('Resigned', `${loser} conceded defeat. ${winner} wins.`);
+      if (this.gameMode === 'webrtc') {
+        this.webrtc.sendResign();
+        this.stopClocks();
+        this.showGameOverModal('Resigned', 'You have conceded the match.');
+      } else {
+        const loser = this.engine.turn === 'w' ? 'White' : 'Black';
+        const winner = this.engine.turn === 'w' ? 'Black' : 'White';
+        this.stopClocks();
+        this.sound.playCheckmate();
+        this.showGameOverModal('Resigned', `${loser} conceded defeat. ${winner} wins.`);
+      }
     });
 
     document.getElementById('btn-draw')?.addEventListener('click', () => {
       if (this.engine.isCheckmate || this.engine.isDraw) return;
-      this.stopClocks();
-      this.sound.playMove();
-      this.showGameOverModal('Draw Agreed', 'Both players agreed to a draw.');
+      if (this.gameMode === 'webrtc') {
+        this.webrtc.sendDrawOffer();
+        this.showToast('Draw offer sent to opponent.');
+      } else {
+        this.stopClocks();
+        this.sound.playMove();
+        this.showGameOverModal('Draw Agreed', 'Both players agreed to a draw.');
+      }
     });
 
     document.getElementById('select-time-control')?.addEventListener('change', (e) => {
       this.timeControl = parseInt(e.target.value, 10);
       this.setupNewGame();
-    });
-
-    document.getElementById('select-game-mode')?.addEventListener('change', (e) => {
-      this.gameMode = e.target.value;
-      const aiDiff = document.getElementById('select-ai-difficulty');
-      if (aiDiff) {
-        aiDiff.style.display = this.gameMode === 'pve_ai' ? 'inline-block' : 'none';
-      }
-      this.setupNewGame();
-    });
-
-    document.getElementById('select-ai-difficulty')?.addEventListener('change', (e) => {
-      this.aiDifficulty = e.target.value;
     });
 
     document.getElementById('check-auto-flip')?.addEventListener('change', (e) => {
@@ -798,24 +977,26 @@ class ChessApp {
       }
     });
 
+    // Sound toggle
     const soundBtn = document.getElementById('btn-toggle-sound');
     soundBtn?.addEventListener('click', () => {
       const isMuted = this.sound.toggleMute();
-      soundBtn.innerHTML = isMuted ? '<span class="icon">🔇</span>' : '<span class="icon">🔊</span>';
-      soundBtn.style.opacity = isMuted ? '0.5' : '1';
+      soundBtn.innerHTML = isMuted ? '🔇' : '🔊';
+      soundBtn.style.opacity = isMuted ? '0.45' : '1';
     });
 
+    // Copy PGN & FEN
     document.getElementById('btn-copy-pgn')?.addEventListener('click', () => {
       const pgn = this.engine.exportPGN();
       navigator.clipboard.writeText(pgn).then(() => {
-        this.showToast('PGN copied to clipboard!');
+        this.showToast('Match PGN copied to clipboard!');
       });
     });
 
     document.getElementById('btn-copy-fen')?.addEventListener('click', () => {
       const fen = this.engine.exportFEN();
       navigator.clipboard.writeText(fen).then(() => {
-        this.showToast('FEN copied to clipboard!');
+        this.showToast('FEN notation copied to clipboard!');
       });
     });
 
@@ -827,7 +1008,7 @@ class ChessApp {
       });
     });
 
-    // History review controls
+    // Move History review navigation
     document.getElementById('btn-history-start')?.addEventListener('click', () => {
       if (this.engine.moveHistory.length > 0) this.jumpToReview(0);
     });
@@ -855,7 +1036,7 @@ class ChessApp {
     this.toastEl.classList.add('show');
     setTimeout(() => {
       this.toastEl.classList.remove('show');
-    }, 2200);
+    }, 2400);
   }
 }
 
